@@ -585,4 +585,270 @@ fill_assessment_sheets(
 
 ---
 
+---
+
+## 📚 Sheet "เวลาเรียน1" — โครงสร้างและวิธีอัพเดตตารางเวลาเรียน
+
+> ไฟล์: `ปพ.5 ม.3 วิทยาการคำนวณ.xlsx` | Sheet: `sheet5.xml` (rId5)
+
+### 🗂️ โครงสร้าง Header (Rows 3–7)
+
+| Row | ชื่อ | ตัวอย่าง |
+|-----|------|---------|
+| 3 | สัปดาห์ | 1, 2, 3... (ที่ col แรกของแต่ละสัปดาห์) |
+| 4 | เดือน | ตุลาคม, พฤศจิกายน, ธ.ค.-ม.ค. |
+| 5 | วัน | จ, อ, พ, พฤ, ศ (5 คอลัมน์ต่อสัปดาห์) |
+| 6 | วันที่ | เลขวันที่ของแต่ละวัน |
+| 7 | ชั่วโมงที่ | (ว่าง หรือใส่เลข period) |
+
+### 🗂️ โครงสร้างคอลัมน์
+
+```
+H → EU  = ตารางเวลาเรียน (24 สัปดาห์ × 6 คอลัมน์)
+            แต่ละสัปดาห์: [จ, อ, พ, พฤ, ศ, separator]
+EW      = มาเรียน  FORMULA: COUNTIF($H:$EU, "/")
+EX      = ป่วย     FORMULA: COUNTIF($H:$EU, "ป")
+EY      = ลา       FORMULA: COUNTIF($H:$EU, "ล")
+EZ      = ขาด      FORMULA: COUNTIF($H:$EU, "ข")
+EY5     = เวลาเรียนเต็ม (INPUT - ต้องปรับตามจำนวนครั้งที่สอน)
+FA      = ร้อยละที่มาเรียน = EW/EY5*100
+```
+
+### 🔢 Column Mapping (สูตรหาคอลัมน์ของแต่ละสัปดาห์)
+
+```python
+H_COL = 8  # column H = index 8
+
+def week_cols(week_pos):  # 1-indexed
+    """คืนค่า [จ, อ, พ, พฤ, ศ] ของสัปดาห์ที่ week_pos"""
+    start = H_COL + (week_pos - 1) * 6
+    return [col_num_to_letter(start + i) for i in range(5)]
+
+# ตัวอย่าง:
+# week_cols(1) → ['H','I','J','K','L']   (สัปดาห์ 1)
+# week_cols(2) → ['N','O','P','Q','R']   (สัปดาห์ 2)
+# week_cols(3) → ['T','U','V','W','X']   (สัปดาห์ 3)
+# Tuesday = cols[1] (index 1)
+```
+
+**Sheet มีทั้งหมด 24 สัปดาห์** (H col 8 → EU col 151 = 144 cols / 6 = 24 weeks)
+
+### 📅 วิธีคำนวณวันสอน (ตัวอย่าง เทอม 2 ปี 2568)
+
+```python
+from datetime import date, timedelta
+
+start = date(2025, 10, 1)  # วันเริ่มสอน
+end   = date(2026, 3, 27)  # วันสิ้นสุด
+teach_weekday = 1           # 0=จ, 1=อ, 2=พ, 3=พฤ, 4=ศ
+
+# วันหยุดราชการที่กระทบ
+holidays = {
+    date(2026, 3, 3): 'วันมาฆบูชา',
+    # เพิ่มตามปีที่ใช้
+}
+
+# สร้าง teaching_weeks (Monday ของแต่ละสัปดาห์ที่สอน)
+# ข้ามสัปดาห์ที่วันสอนตรงกับวันหยุด
+teaching_weeks = []
+week_start = start - timedelta(days=start.weekday())  # Monday ของสัปดาห์แรก
+while week_start <= end:
+    teach_date = week_start + timedelta(days=teach_weekday)
+    if start <= teach_date <= end and teach_date not in holidays:
+        teaching_weeks.append(week_start)
+    elif teach_date not in holidays:
+        pass  # นอกช่วง semester
+    week_start += timedelta(days=7)
+
+# ⚠️ ถ้าได้มากกว่า 24 สัปดาห์ → ข้ามสัปดาห์หยุด (เช่น มาฆบูชา)
+# เพื่อให้ fit ใน 24 slots ของ sheet
+```
+
+### ✅ Template: อัพเดต Sheet เวลาเรียน (สมบูรณ์)
+
+```python
+import zipfile, shutil, os
+from lxml import etree
+from datetime import date, timedelta
+
+NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+H_COL = 8
+EU_COL = 151  # col_letter_to_num('EU')
+
+mfull = {1:'มกราคม',2:'กุมภาพันธ์',3:'มีนาคม',4:'เมษายน',
+         5:'พฤษภาคม',6:'มิถุนายน',7:'กรกฎาคม',8:'สิงหาคม',
+         9:'กันยายน',10:'ตุลาคม',11:'พฤศจิกายน',12:'ธันวาคม'}
+mabbr = {1:'ม.ค.',2:'ก.พ.',3:'มี.ค.',4:'เม.ย.',
+         5:'พ.ค.',6:'มิ.ย.',7:'ก.ค.',8:'ส.ค.',
+         9:'ก.ย.',10:'ต.ค.',11:'พ.ย.',12:'ธ.ค.'}
+
+def month_label(monday):
+    fri = monday + timedelta(days=4)
+    return mfull[monday.month] if monday.month == fri.month \
+           else f'{mabbr[monday.month]}-{mabbr[fri.month]}'
+
+def update_attendance(file_path, teaching_weeks, teach_weekday,
+                      sem_start, sem_end, total_hours):
+    """
+    Args:
+        teaching_weeks:  list of date (Monday of each teaching week, max 24)
+        teach_weekday:   0=จ, 1=อ, 2=พ, 3=พฤ, 4=ศ
+        sem_start/end:   date range of semester
+        total_hours:     int — ใส่ใน EY5 (เวลาเรียนเต็ม)
+    """
+    extract_dir = 'xlsx_tmp_att'
+    if os.path.exists(extract_dir): shutil.rmtree(extract_dir)
+    with zipfile.ZipFile(file_path, 'r') as z: z.extractall(extract_dir)
+
+    sheet_path = f'{extract_dir}/xl/worksheets/sheet5.xml'
+    tree = etree.parse(sheet_path, etree.XMLParser(remove_blank_text=False))
+    root = tree.getroot()
+    ns = {'x': NS}
+    rows = root.findall('.//x:row', ns)
+    row_by_num = {int(r.get('r', 0)): r for r in rows}
+
+    def col_num_to_letter(n):
+        result = ''
+        while n > 0:
+            n -= 1; result = chr(n % 26 + ord('A')) + result; n //= 26
+        return result
+
+    def col_letter_to_num(col):
+        num = 0
+        for c in col: num = num * 26 + (ord(c) - ord('A') + 1)
+        return num
+
+    def week_cols(wp):
+        s = H_COL + (wp - 1) * 6
+        return [col_num_to_letter(s + i) for i in range(5)]
+
+    def find_or_make(row_elem, col_letter, row_num):
+        ref = f'{col_letter}{row_num}'; cn = col_letter_to_num(col_letter)
+        for c in row_elem.findall(f'{{{NS}}}c'):
+            if c.get('r') == ref: return c
+        new_c = etree.Element(f'{{{NS}}}c'); new_c.set('r', ref)
+        cells = row_elem.findall(f'{{{NS}}}c'); pos = len(cells)
+        for i, c in enumerate(cells):
+            if col_letter_to_num(''.join([ch for ch in c.get('r','') if ch.isalpha()])) > cn:
+                pos = i; break
+        row_elem.insert(pos, new_c); return new_c
+
+    def set_str(row_elem, col, rn, text):
+        c = find_or_make(row_elem, col, rn)
+        if 't' in c.attrib: del c.attrib['t']
+        for ch in list(c):
+            if ch.tag.split('}')[-1] in ['v','is']: c.remove(ch)
+        c.set('t', 'str')
+        v = etree.SubElement(c, f'{{{NS}}}v'); v.text = text
+
+    def set_num(row_elem, col, rn, number):
+        c = find_or_make(row_elem, col, rn)
+        if 't' in c.attrib: del c.attrib['t']
+        for ch in list(c):
+            if ch.tag.split('}')[-1] in ['v','is']: c.remove(ch)
+        v = etree.SubElement(c, f'{{{NS}}}v'); v.text = str(number)
+
+    # หา shared string index สำหรับ '/'
+    ss_path = f'{extract_dir}/xl/sharedStrings.xml'
+    ss_tree = etree.parse(ss_path, etree.XMLParser(remove_blank_text=False))
+    ss_root = ss_tree.getroot()
+    slash_idx = None
+    for i, si in enumerate(ss_root.findall('.//x:si', ns)):
+        t_list = si.findall('.//x:t', ns)
+        if ''.join([t.text or '' for t in t_list]) == '/':
+            slash_idx = i; break
+
+    # --- Step 1: Clear H-EU in rows 4, 6, 8-19 ---
+    for rn in [4, 6] + list(range(8, 20)):
+        row = row_by_num.get(rn)
+        if not row: continue
+        for c in row.findall(f'{{{NS}}}c'):
+            col_l = ''.join([ch for ch in c.get('r','') if ch.isalpha()])
+            cn = col_letter_to_num(col_l)
+            if H_COL <= cn <= EU_COL:
+                if rn in [4, 6] or c.find(f'{{{NS}}}f') is None:
+                    if 't' in c.attrib: del c.attrib['t']
+                    v = c.find(f'{{{NS}}}v')
+                    if v is not None: c.remove(v)
+
+    # --- Step 2: Fill months, dates, and '/' ---
+    row4 = row_by_num.get(4)
+    row6 = row_by_num.get(6)
+    for wp, monday in enumerate(teaching_weeks, 1):
+        cols = week_cols(wp)
+        set_str(row4, cols[0], 4, month_label(monday))
+        for di, col in enumerate(cols):
+            d = monday + timedelta(days=di)
+            if sem_start <= d <= sem_end:
+                set_num(row6, col, 6, d.day)
+        teach_date = monday + timedelta(days=teach_weekday)
+        if sem_start <= teach_date <= sem_end:
+            for rn in range(8, 20):
+                row = row_by_num.get(rn)
+                if not row: continue
+                c = find_or_make(row, cols[teach_weekday], rn)
+                for ch in list(c):
+                    if ch.tag.split('}')[-1] in ['v','is']: c.remove(ch)
+                if slash_idx is not None:
+                    c.set('t', 's')
+                    v = etree.SubElement(c, f'{{{NS}}}v'); v.text = str(slash_idx)
+                else:
+                    c.set('t', 'str')
+                    v = etree.SubElement(c, f'{{{NS}}}v'); v.text = '/'
+
+    # --- Step 3: Update EY5 (เวลาเรียนเต็ม) ---
+    row5 = row_by_num.get(5)
+    for c in row5.findall(f'{{{NS}}}c'):
+        if c.get('r') == 'EY5':
+            v = c.find(f'{{{NS}}}v')
+            if v is not None: v.text = str(total_hours)
+
+    tree.write(sheet_path, encoding='utf-8', xml_declaration=True)
+    def zipdir(path, ziph):
+        for rd, dd, ff in os.walk(path):
+            for f in ff:
+                fp = os.path.join(rd, f)
+                ziph.write(fp, os.path.relpath(fp, path))
+    with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        zipdir(extract_dir, zipf)
+    shutil.rmtree(extract_dir)
+    print(f'✅ บันทึกสำเร็จ: {file_path}')
+```
+
+### 🎯 ตัวอย่างการใช้งาน (เทอม 2 ปี 2568 สอนวันอังคาร)
+
+```python
+from datetime import date
+
+# teaching_weeks ที่สร้างจากการคำนวณ (ข้าม Makha Bucha week)
+teaching_weeks = [
+    date(2025,10,6), date(2025,10,13), date(2025,10,20), date(2025,10,27),
+    date(2025,11,3), date(2025,11,10), date(2025,11,17), date(2025,11,24),
+    date(2025,12,1), date(2025,12,8), date(2025,12,15), date(2025,12,22),
+    date(2025,12,29), date(2026,1,5), date(2026,1,12), date(2026,1,19),
+    date(2026,1,26), date(2026,2,2), date(2026,2,9), date(2026,2,16),
+    date(2026,2,23), date(2026,3,9), date(2026,3,16), date(2026,3,23),
+]
+
+update_attendance(
+    file_path      = 'ปพ.5 ม.3 วิทยาการคำนวณ.xlsx',
+    teaching_weeks = teaching_weeks,
+    teach_weekday  = 1,              # 1 = วันอังคาร
+    sem_start      = date(2025,10,1),
+    sem_end        = date(2026,3,27),
+    total_hours    = 24,
+)
+```
+
+### ⚠️ บทเรียนสำคัญ
+
+1. **Sheet มี 24 สัปดาห์พอดี** (H→EU = 144 cols / 6 = 24) → ต้องจัด teaching_weeks ให้ ≤ 24
+2. **ข้ามสัปดาห์หยุด** — ถ้าวันสอนตรงวันหยุด ให้ข้ามทั้งสัปดาห์นั้นออกจาก list (วันที่จะกระโดด เช่น ก.พ. → มี.ค. ข้าม 1 สัปดาห์)
+3. **'/' คือ shared string** — ต้องหา index ใน sharedStrings.xml แล้วใช้ t="s" (อย่าใช้ t="str" เพราะ COUNTIF อาจนับไม่ถูก)
+4. **เดือนข้ามเดือน** — ถ้า Monday–Friday คนละเดือน ให้ใช้ abbr เช่น "ธ.ค.-ม.ค."
+5. **EY5 = เวลาเรียนเต็ม** — ตั้งให้ตรงกับ len(teaching_weeks) เพื่อให้ % ถูกต้อง
+6. **ระวัง FF column** — มีข้อมูลเก่าอยู่นอก H-EU ไม่ต้องสนใจ (ไม่ถูกนับใน COUNTIF)
+
+---
+
 **ส้มต้อนรับ! ใช้ skill นี้สำหรับแก้ Excel ปลอดภัย** 🐱✨
