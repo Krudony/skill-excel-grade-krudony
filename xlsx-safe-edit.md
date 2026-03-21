@@ -373,4 +373,216 @@ def fix_grade3(file_path):
 
 ---
 
+## 📚 Sheet "คุณลักษณะ", "อ่านคิด", "สมรรถนะ" — โครงสร้างและวิธีใส่คะแนน
+
+> ไฟล์: `ปพ.5 ม.3 วิทยาการคำนวณ.xlsx`
+
+### 🗂️ Sheet File Mapping
+
+| Sheet Name | File | rId |
+|------------|------|-----|
+| คุณลักษณะ | sheet7.xml | rId7 |
+| อ่านคิด | sheet8.xml | rId8 |
+| สมรรถนะ | sheet9.xml | rId9 |
+
+> ดู mapping จริงใน `xl/_rels/workbook.xml.rels`
+
+---
+
+### 📋 คุณลักษณะ (sheet7.xml)
+
+| Excel | ชื่อ | ประเภท | หมายเหตุ |
+|-------|------|--------|---------|
+| H–O | คุณลักษณะ 1–8 | **INPUT** | max=10 ต่อด้าน |
+| R | รวมคะแนน | FORMULA | `SUM(H:Q)` |
+| S | ร้อยละ | FORMULA | `ROUND(R/80*100, 0)` |
+| T | ระดับคุณภาพ | FORMULA | `VLOOKUP(S, kun, 5, TRUE)` |
+
+**เกณฑ์ระดับ (kun table):**
+| ช่วงร้อยละ | ระดับ |
+|-----------|-------|
+| 0–49.49 | ไม่ผ่าน |
+| 49.5–64.49 | ผ่าน |
+| 64.5–79.49 | ดี |
+| 79.5–100 | ดีเยี่ยม |
+
+**เป้าหมาย "ดี":** sum(H:O) = 52–63 จาก 80
+
+---
+
+### 📋 อ่านคิด (sheet8.xml)
+
+| Excel | ชื่อ | ประเภท | หมายเหตุ |
+|-------|------|--------|---------|
+| H–L | ข้อ 1–5 | **INPUT** | max=5 ต่อข้อ |
+| M | รวม | FORMULA | `SUM(H:L)` max=25 |
+| N | ร้อยละ | FORMULA | `ROUND(M/25*100, 0)` |
+| O,P | ผลการประเมิน | FORMULA | `VLOOKUP(N, Arn, 4/5, TRUE)` |
+
+**เป้าหมาย "ดี":** sum(H:L) = 17–19 จาก 25
+
+---
+
+### 📋 สมรรถนะ (sheet9.xml)
+
+| Excel | ชื่อ | ประเภท | หมายเหตุ |
+|-------|------|--------|---------|
+| H | สมรรถนะ 1 (การสื่อสาร) | **INPUT** | score 0–100 |
+| J | สมรรถนะ 2 (การคิด) | **INPUT** | score 0–100 |
+| L | สมรรถนะ 3 (การแก้ปัญหา) | **INPUT** | score 0–100 |
+| N | สมรรถนะ 4 (ทักษะชีวิต) | **INPUT** | score 0–100 |
+| P | สมรรถนะ 5 (เทคโนโลยี) | **INPUT** | score 0–100 |
+| I,K,M,O,Q | สรุปรายด้าน | FORMULA | `VLOOKUP(input, capacity, 4)` → 0–3 |
+| R | เฉลี่ย | FORMULA | `SUM(H,J,L,N,P)/5` |
+| S | ระดับรวม | FORMULA | `VLOOKUP(R, capacity, 4)` → 0–3 |
+| T | ผลการประเมิน | FORMULA | `VLOOKUP(S, capacity_level, 2)` |
+
+**เกณฑ์ระดับ (capacity table) — เหมือน kun:**
+- 0–49.49 → 0 (ปรับปรุง) | 49.5–64.49 → 1 (พอใช้)
+- 64.5–79.49 → 2 (ดี) | 79.5–100 → 3 (ดีเยี่ยม)
+
+**เป้าหมาย "ดี":** แต่ละ H,J,L,N,P = 65–79
+
+---
+
+### ✅ Helper Functions (ใช้ซ้ำสำหรับทุก sheet)
+
+```python
+import zipfile, shutil, os, random
+from lxml import etree
+
+NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+def col_to_num(col):
+    num = 0
+    for c in col:
+        num = num * 26 + (ord(c) - ord('A') + 1)
+    return num
+
+def ensure_cell(row_elem, col_letter, row_num):
+    """หา cell หรือสร้างใหม่ถ้าไม่มี (insert ในตำแหน่งที่ถูกต้อง)"""
+    target_ref = f'{col_letter}{row_num}'
+    cells = row_elem.findall(f'{{{NS}}}c')
+    for c in cells:
+        if c.get('r') == target_ref:
+            return c
+    new_c = etree.Element(f'{{{NS}}}c')
+    new_c.set('r', target_ref)
+    col_num = col_to_num(col_letter)
+    insert_pos = len(cells)
+    for i, c in enumerate(cells):
+        existing_col = ''.join([ch for ch in c.get('r', '') if ch.isalpha()])
+        if col_to_num(existing_col) > col_num:
+            insert_pos = i
+            break
+    row_elem.insert(insert_pos, new_c)
+    return new_c
+
+def set_val(row_elem, col_letter, row_num, value):
+    """Set numeric value ใน cell (สร้าง <v> ถ้าไม่มี)"""
+    c = ensure_cell(row_elem, col_letter, row_num)
+    v = c.find(f'{{{NS}}}v')
+    if v is None:
+        v = etree.SubElement(c, f'{{{NS}}}v')
+    v.text = str(value)
+```
+
+> **สำคัญ**: ใช้ `ensure_cell` + `set_val` แทนการหา cell ตรงๆ เพราะ INPUT cells ที่ยังไม่มีค่า อาจไม่มี `<v>` element หรืออาจไม่มี `<c>` element เลย
+
+---
+
+### ✅ วิธีใส่คะแนน ทั้ง 3 Sheet (Template)
+
+```python
+def fill_assessment_sheets(file_path, kun_scores, read_scores, cap_scores):
+    """
+    Args:
+        kun_scores:  list of 12 lists, each = [s1,s2,...,s8] (0-10 per criterion)
+        read_scores: list of 12 lists, each = [s1,s2,s3,s4,s5] (0-5 per item)
+        cap_scores:  list of 12 lists, each = [s1,s2,s3,s4,s5] (0-100 per competency)
+    """
+    extract_dir = 'xlsx_tmp'
+    if os.path.exists(extract_dir):
+        shutil.rmtree(extract_dir)
+    with zipfile.ZipFile(file_path, 'r') as z:
+        z.extractall(extract_dir)
+
+    # คุณลักษณะ — sheet7.xml, INPUT: H-O
+    _fill_sheet(extract_dir, 'sheet7.xml', ['H','I','J','K','L','M','N','O'], kun_scores)
+
+    # อ่านคิด — sheet8.xml, INPUT: H-L
+    _fill_sheet(extract_dir, 'sheet8.xml', ['H','I','J','K','L'], read_scores)
+
+    # สมรรถนะ — sheet9.xml, INPUT: H,J,L,N,P (สลับกับ FORMULA)
+    _fill_sheet(extract_dir, 'sheet9.xml', ['H','J','L','N','P'], cap_scores)
+
+    def zipdir(path, ziph):
+        for root_dir, dirs, files in os.walk(path):
+            for file in files:
+                fp = os.path.join(root_dir, file)
+                ziph.write(fp, os.path.relpath(fp, path))
+    with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        zipdir(extract_dir, zipf)
+    shutil.rmtree(extract_dir)
+    print(f'✅ บันทึกสำเร็จ: {file_path}')
+
+def _fill_sheet(extract_dir, sheet_file, input_cols, scores_list):
+    sheet_path = f'{extract_dir}/xl/worksheets/{sheet_file}'
+    tree = etree.parse(sheet_path, etree.XMLParser(remove_blank_text=False))
+    root = tree.getroot()
+    ns = {'x': NS}
+    rows = root.findall('.//x:row', ns)
+    row_by_num = {int(r.get('r', 0)): r for r in rows}
+    for idx, excel_row in enumerate(range(8, 8 + len(scores_list))):
+        row = row_by_num.get(excel_row)
+        if not row:
+            continue
+        for ci, col in enumerate(input_cols):
+            set_val(row, col, excel_row, scores_list[idx][ci])
+    tree.write(sheet_path, encoding='utf-8', xml_declaration=True)
+```
+
+---
+
+### 🎯 ตัวอย่าง: ให้ผลระดับ "ดี" ทุกคน
+
+```python
+import random
+
+def gen_kun_di():     # คุณลักษณะ ดี: sum 52-63 จาก 80
+    scores = [random.choice([6,7,7,8]) for _ in range(8)]
+    while not (52 <= sum(scores) <= 63):
+        scores = [random.choice([6,7,7,8]) for _ in range(8)]
+    return scores
+
+def gen_read_di():    # อ่านคิด ดี: sum 17-19 จาก 25
+    scores = [random.choice([3,4,4]) for _ in range(5)]
+    while not (17 <= sum(scores) <= 19):
+        scores = [random.choice([3,4,4]) for _ in range(5)]
+    return scores
+
+def gen_cap_di():     # สมรรถนะ ดี: 65-79 ต่อด้าน
+    return [random.randint(65, 79) for _ in range(5)]
+
+n = 12  # จำนวนนักเรียน
+fill_assessment_sheets(
+    'ปพ.5 ม.3 วิทยาการคำนวณ.xlsx',
+    kun_scores  = [gen_kun_di()  for _ in range(n)],
+    read_scores = [gen_read_di() for _ in range(n)],
+    cap_scores  = [gen_cap_di()  for _ in range(n)],
+)
+```
+
+---
+
+### ⚠️ บทเรียนสำคัญ
+
+1. **INPUT cells อาจไม่มี `<c>` element** — ถ้าไม่เคยกรอกค่า XML จะไม่บันทึก cell ว่างไว้ → ต้องสร้างใหม่ด้วย `ensure_cell()`
+2. **INPUT cells อาจมี `<c>` แต่ไม่มี `<v>`** — ต้องตรวจและ SubElement ก่อน set
+3. **Student rows เริ่มที่ row 8** — rows 8–19 = นักเรียน 12 คน (ปพ.5 ม.3)
+4. **ห้ามแก้ row 7** — เป็น header คะแนนเต็ม formula ทุกตัวอ้างอิง `$7`
+5. **สมรรถนะ INPUT เป็นคอลัมน์เว้น** — H,J,L,N,P (ไม่ใช่ H-L ต่อเนื่อง)
+
+---
+
 **ส้มต้อนรับ! ใช้ skill นี้สำหรับแก้ Excel ปลอดภัย** 🐱✨
