@@ -331,6 +331,51 @@ BH + DI = DQ_aim - BG - DH
 | พัชรธิดา | 3.5 | 61 | 18 | 56 | 7,6,8,6,7,8,7,7 | 19 | 154 | 77 |
 | ณัฐกานต์ | 3.5 | 40 | 20 | 74 | 9,9,10,9,9,10,9,9 | 20 | 154 | 77 |
 
+---
+
+### 🔧 การปรับเกรดนักเรียนรายคน (Single Student Grade Adjustment)
+
+**หลักการ**: ปรับ **BJ-BQ (คะแนนเก็บ)** ก่อนเสมอ — ไม่แตะ BH/DI ถ้าไม่จำเป็น
+- เหตุผล: "เก็บดี สอบแย่" สมเหตุสมผลกว่า "สอบดีแต่เก็บแย่" สำหรับเกรดต่ำ-กลาง
+- BH/DI ควรสะท้อนระดับเกรดจริง ไม่ควรสูงกว่าคะแนนเก็บมากเกินไป
+
+**ขั้นตอน:**
+```
+1. คำนวณ DQ_target (กลาง grade range ใหม่)
+2. DH_need = DQ_target - BG - BH - DI
+3. ออกแบบ BJ-BQ ใหม่ให้ sum = DH_need (ค่าแต่ละช่อง 5-8)
+4. อัพเดทไฟล์ + cached values (DH, DJ, DM, DN, DO, DP, DQ, DR)
+5. บันทึกลงไฟล์จริงทันที (ไม่ใช่แค่ simulate)
+```
+
+**ตัวอย่าง: ปรับ ก้องเกียรติ grade 1 → 1.5**
+- BG=40, BH=10, DI=10 (คงเดิม)
+- DQ_target=114 (DR=57, grade 1.5)
+- DH_need = 114-40-10-10 = **54**
+- BJ-BQ ใหม่: [6,7,7,6,7,6,7,8] sum=54 (จากเดิม [5,6,5,6,5,5,6,6] sum=44)
+- DQ=114, DR=57 → grade 1.5 ✓
+
+```python
+# ปรับเกรดนักเรียนรายคน — แก้ BJ-BQ ให้ DH ตรงเป้า
+ROW = 10  # row ของนักเรียนที่ต้องปรับ
+new_inds = [6,7,7,6,7,6,7,8]  # BJ-BQ ใหม่ sum=54
+BH = 10; DI = 10               # คงเดิม (หรือปรับถ้าจำเป็น)
+
+dh = sum(new_inds)
+bg = <อ่านจาก BG{ROW} cached value>
+dj = DI; dm = dj; dn = dh + dm
+do_ = bg + BH; dq = do_ + dn; dr = round(dq/200*100)
+
+# set BJ-BQ + update cached values ทั้งหมด
+for i, col in enumerate(bj_cols):
+    set_val(row_el, f'{col}{ROW}', new_inds[i])
+set_val(row_el, f'DH{ROW}', dh); set_val(row_el, f'DJ{ROW}', dj)
+set_val(row_el, f'DM{ROW}', dm); set_val(row_el, f'DN{ROW}', dn)
+set_val(row_el, f'DO{ROW}', do_); set_val(row_el, f'DP{ROW}', dn)
+set_val(row_el, f'DQ{ROW}', dq); set_val(row_el, f'DR{ROW}', dr)
+# บันทึกไฟล์จริงทันที ไม่ใช่แค่ preview
+```
+
 ### 🗂️ ภาคเรียนที่ 1 (cols I–BI)
 
 | Excel | Col# | ชื่อ | ประเภท |
