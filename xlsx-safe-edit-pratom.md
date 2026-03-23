@@ -802,6 +802,208 @@ fill_attendance_sem2(
 
 ---
 
+## 📅 Sheet เวลาเรียน1 (sheet5.xml) — บันทึกการเช็คชื่อ ภาค1
+
+### ⚠️ ต่างจาก เวลาเรียน2 ตรงนี้
+
+| | sheet5 (ภาค1) | sheet6 (ภาค2) |
+|--|--|--|
+| Row 4 เดือน | **มีแล้ว** (pre-filled) | ต้องสร้าง |
+| Row 6 วันที่ | **มีแล้ว** (pre-filled) | ต้องสร้าง |
+| Row 7 คาบ | ต้องเติม | ต้องสร้าง |
+| Attendance 8-N | ต้องเติม | ต้องสร้าง |
+
+→ sheet5 ไม่ต้องคำนวณ calendar — loop col offset +2 ต่อ week slot ได้เลย
+
+### 📌 วิธีตรวจวันหยุด
+
+ตรวจ holidays จาก **dates จริงใน row 6 ของ "พ" column** (ไม่ใช่จาก day-of-week จริง เพราะ template อาจไม่ตรงกับ calendar จริง)
+
+```python
+# อ่าน dates จาก row 6 col "พ" (offset +2) แล้วเช็ค holidays
+wed_dates = []
+for n in range(20):  # 20 week slots
+    wed_col = col_letter(8 + n*6 + 2)
+    day_str = get_val(row6, wed_col)
+    month   = get_month_from_row4(n)   # เดือนจาก row 4
+    year    = 2025                     # ปี ค.ศ.
+    d = date(year, month, int(day_str))
+    if d not in holidays:
+        wed_dates.append((d, wed_col))
+```
+
+### ✅ Template: กรอกเวลาเรียน1 (sheet5 — dates pre-filled)
+
+```python
+import zipfile, os, re
+import xml.etree.ElementTree as ET
+
+NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+ET.register_namespace('', NS)
+
+def col_letter(n):
+    r=''
+    while n>0: n,m=divmod(n-1,26); r=chr(65+m)+r
+    return r
+def col_index(s):
+    r=0
+    for c in s: r=r*26+ord(c)-64
+    return r
+
+def fill_attendance_sem1(file_path,
+                         teach_offset=2,      # 0=จ 1=อ 2=พ(default) 3=พฤ 4=ศ
+                         period=1,
+                         mark='/',
+                         holidays=None,       # set of date — ตรวจจาก row6 col ที่สอน
+                         student_rows=None,
+                         num_weeks=20):       # จำนวน week slots ในชีต
+    """
+    กรอกเวลาเรียน1 (sheet5)
+    - rows 4,6 มี dates/months อยู่แล้ว — ไม่ต้องสร้าง
+    - เติมเฉพาะ row 7 (คาบ) + attendance rows
+    - ตรวจ holidays จาก dates จริงใน row 6
+    """
+    if holidays is None: holidays = set()
+    if student_rows is None: student_rows = list(range(8, 21))
+
+    with zipfile.ZipFile(file_path) as z:
+        with z.open('xl/sharedStrings.xml') as f:
+            ss_root = ET.parse(f).getroot()
+        files = {n: z.read(n) for n in z.namelist()}
+
+    shared = [''.join(t.text or '' for t in si.findall(f'.//{{{NS}}}t'))
+              for si in ss_root.findall(f'{{{NS}}}si')]
+
+    root = ET.fromstring(files['xl/worksheets/sheet5.xml'].decode('utf-8'))
+    sd   = root.find(f'{{{NS}}}sheetData')
+    row_map = {int(r.get('r')): r for r in sd.findall(f'{{{NS}}}row')}
+
+    MONTH_NUM = {
+        'มกราคม':1,'กุมภาพันธ์':2,'มีนาคม':3,'เมษายน':4,
+        'พฤษภาคม':5,'มิถุนายน':6,'กรกฎาคม':7,'สิงหาคม':8,
+        'กันยายน':9,'ตุลาคม':10,'พฤศจิกายน':11,'ธันวาคม':12,
+        'พ.ค.-มิ.ย.':5,'มิ.ย.-ก.ค.':6,'ก.ค.-ส.ค.':7,'ส.ค.-ก.ย.':8,
+        'ก.ย.-ต.ค.':9,'ต.ค.-พ.ย.':10,'พ.ย.-ธ.ค.':11,'ธ.ค.-ม.ค.':12,
+        'ม.ค.-ก.พ.':1,'ก.พ.-มี.ค.':2,
+    }
+
+    def cell_val(row_el, col_str):
+        if row_el is None: return ''
+        cref = f"{col_str}{row_el.get('r')}"
+        for c in row_el.findall(f'{{{NS}}}c'):
+            if c.get('r') == cref:
+                v = c.find(f'{{{NS}}}v')
+                t = c.get('t','')
+                if v is None: return ''
+                return shared[int(v.text)] if t=='s' else (v.text or '')
+        return ''
+
+    def get_row(rn):
+        if rn not in row_map:
+            nr=ET.SubElement(sd,f'{{{NS}}}row'); nr.set('r',str(rn))
+            row_map[rn]=nr
+        return row_map[rn]
+
+    def set_cell(row_el, cref, value, vtype):
+        col_n = col_index(''.join(filter(str.isalpha, cref)))
+        c = next((x for x in row_el.findall(f'{{{NS}}}c') if x.get('r')==cref), None)
+        if c is None:
+            c = ET.Element(f'{{{NS}}}c'); c.set('r', cref)
+            idx = sum(1 for x in row_el.findall(f'{{{NS}}}c')
+                      if col_index(''.join(filter(str.isalpha, x.get('r')))) < col_n)
+            row_el.insert(idx, c)
+        for tag in [f'{{{NS}}}v', f'{{{NS}}}f']:
+            el=c.find(tag)
+            if el is not None: c.remove(el)
+        if vtype=='str': c.set('t','str')
+        elif 't' in c.attrib: del c.attrib['t']
+        v=ET.SubElement(c,f'{{{NS}}}v'); v.text=value
+
+    r4 = row_map.get(4)
+    r6 = row_map.get(6)
+    filled = 0
+    skipped = []
+
+    for n in range(num_weeks):
+        base     = 8 + n*6
+        teach_col = col_letter(base + teach_offset)
+
+        # อ่าน month จาก row4 (base col)
+        month_label = cell_val(r4, col_letter(base))
+        month_num   = MONTH_NUM.get(month_label, 0)
+
+        # อ่าน date จาก row6 (teach col)
+        day_str = cell_val(r6, teach_col)
+        if not day_str or not month_num:
+            continue
+
+        # ตรวจ holiday
+        if holidays:
+            from datetime import date as _date
+            year = 2025  # ภาค1 = 2025
+            if month_num < 5:  # ถ้าน้อยกว่า พ.ค. แสดงว่าข้ามปีไม่ได้
+                year = 2026
+            try:
+                d = _date(year, month_num, int(day_str))
+                if d in holidays:
+                    skipped.append(f"{teach_col} ({d})")
+                    continue
+            except:
+                pass
+
+        # เติม row7 + attendance
+        set_cell(get_row(7), f'{teach_col}7', str(period), 'n')
+        for sr in student_rows:
+            set_cell(get_row(sr), f'{teach_col}{sr}', mark, 'str')
+            filled += 1
+
+    # re-sort rows
+    rows_sorted = sorted(sd.findall(f'{{{NS}}}row'), key=lambda r:int(r.get('r')))
+    for r in list(sd): sd.remove(r)
+    for r in rows_sorted: sd.append(r)
+
+    files['xl/worksheets/sheet5.xml'] = ET.tostring(root,'utf-8',xml_declaration=True)
+    files.pop('xl/calcChain.xml', None)
+    ct = files['[Content_Types].xml'].decode('utf-8')
+    ct = re.sub(r'<Override[^>]+calcChain[^>]+/>', '', ct)
+    files['[Content_Types].xml'] = ct.encode('utf-8')
+
+    tmp = file_path+'.tmp'
+    with zipfile.ZipFile(tmp,'w',zipfile.ZIP_DEFLATED) as zout:
+        for name,data in files.items(): zout.writestr(name,data)
+    os.replace(tmp, file_path)
+
+    weeks_taught = filled // len(student_rows)
+    print(f'✅ เวลาเรียน1 บันทึกสำเร็จ: {weeks_taught} สัปดาห์, {filled} cells')
+    if skipped:
+        print(f'  ข้าม (วันหยุด): {skipped}')
+
+
+# --- ตัวอย่างใช้งาน ---
+from datetime import date
+
+holidays_sem1_68 = {
+    date(2025, 5, 1),   # วันแรงงาน
+    date(2025, 5, 5),   # วันฉัตรมงคล
+    date(2025, 5,12),   # วันวิสาขบูชา
+    date(2025, 6, 3),   # วันเฉลิมพระชนมพรรษา ร.10
+    date(2025, 7,28),   # วันเฉลิมพระชนมพรรษา ร.10
+    date(2025, 8,12),   # วันแม่แห่งชาติ
+}
+
+fill_attendance_sem1(
+    'ปพ.5 ป.1 -กอท.xlsx',
+    teach_offset = 2,     # วันพุธ
+    period       = 1,     # คาบที่ 1
+    mark         = '/',   # มาทุกคน
+    holidays     = holidays_sem1_68,
+    student_rows = list(range(8, 21)),  # 13 คน
+    num_weeks    = 20,
+)
+```
+
+---
+
 ## ⚠️ บทเรียนสำคัญ (ต่างจากมัธยม + สิ่งที่มักลืม)
 
 1. **คะแนน1 มี 2 ภาคในชีตเดียว** — ภาค1 = I–BI, ภาค2 = BJ–DV ห้ามสับสน
