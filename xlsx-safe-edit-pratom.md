@@ -265,17 +265,71 @@ def update_main_sheet(file_path, updates):
 ประถมมี **ภาคเรียนที่ 1 และ 2 อยู่ในชีตเดียวกัน** — ต้องแยกให้ถูก
 
 ### 🚫 กฎเด็ดขาด — ห้ามแก้ข้อมูลเหล่านี้
-> **ห้ามยุ่งกับคะแนน ภาคเรียนที่ 1 และกลางภาค** ทุกกรณี
-> เหตุผล: ข้อมูลเหล่านี้อาจถูกบันทึกไปแล้ว และการแก้จะทำให้ผิดพลาด
 
 | ช่วงคอลัมน์ | ชื่อ | สถานะ |
 |------------|------|-------|
 | I–P | ตัวชี้วัด 1–8 ภาค1 | 🚫 ห้ามแก้ |
 | BG | รวมระหว่างเรียน ภาค1 | 🚫 FORMULA ห้ามแก้ |
-| BH | คะแนนปลายภาค ภาค1 | 🚫 ห้ามแก้ |
+| BH | กลางภาค ภาค1 | ⚠️ แก้ได้ถ้าครูสั่ง (เพื่อให้เกรดสอดคล้อง) |
 | BI | รวมทั้งหมด ภาค1 | 🚫 FORMULA ห้ามแก้ |
-| **BJ–BQ** | **ตัวชี้วัด 1–8 ภาค2** | ✅ INPUT |
-| **DI** | **คะแนนปลายภาค ภาค2** | ✅ INPUT |
+| **BJ–BQ** | **ตัวชี้วัด 1–8 ภาค2** | ✅ INPUT (≥1 ห้ามเป็น 0) |
+| **DI** | **ปลายภาค ภาค2** | ✅ INPUT |
+
+---
+
+### 🎯 การกระจายคะแนน BH และ DI ให้สอดคล้องกัน
+
+**หลักการ:** BH (กลางภาค) และ DI (ปลายภาค) ต้องไปทิศทางเดียวกันและใกล้เคียงกัน
+- เกรดสูง → BH สูง + DI สูง
+- เกรดต่ำ → BH ต่ำ + DI ต่ำ
+- BH และ DI ควรต่างกันไม่เกิน 2-3 คะแนน
+
+**สูตรคำนวณ:**
+```
+DQ_target = กลางช่วงของ grade range
+BH + DI = DQ_target - BG - DH
+แบ่งเกือบเท่ากัน: BH ≈ DI ≈ (BH+DI) / 2
+```
+
+**ตาราง grade → DQ_target (DQ7=200 หลัง BJ7:BQ7=10):**
+
+| เกรด | DR | DQ range | DQ_aim | BJ-BQ per item |
+|------|-----|---------|--------|----------------|
+| 1 | 50–54 | 100–108 | 104 | 5–6 (DH≈40–44) |
+| 1.5 | 55–59 | 110–118 | 114 | 5–7 |
+| 2 | 60–64 | 120–128 | 124 | 5–7 (DH≈44–52) |
+| 2.5 | 65–69 | 130–138 | 134 | 6–7 (DH≈48–56) |
+| 3 | 70–74 | 140–148 | 144 | 6–8 (DH≈52–60) |
+| 3.5 | 75–79 | 149–158 | 154 | 7–8 (DH≈56–64) |
+| 4 | 80+ | 160+ | 164 | 8–10 |
+
+**สูตร BH และ DI:**
+```
+BH + DI = DQ_aim - BG - DH
+แบ่งเกือบเท่ากัน: BH ≈ DI ≈ (BH+DI)/2  (ต่างกันไม่เกิน 2)
+```
+
+> ⚠️ **BG สูง + grade ต่ำ** (เช่น BG=56, grade 1) → DH min=40, BH+DI ≈ 8 → BH=4, DI=4 (บังคับ)
+> ⚠️ **BG ต่ำ + grade สูง** (เช่น BG=40, grade 3.5) → DH ต้องสูง ≈ 74 → BJ-BQ items=9–10
+> ⚠️ **ตรวจสอบ**: `DQ = BG+BH+DH+DI`, `DR = round(DQ/200*100)` ต้องอยู่ใน grade range
+> ⚠️ **BJ-BQ ≥ 5** ทุกช่อง (ห้ามน้อยกว่า)
+
+**ตัวอย่างจริง (ปพ.5 ป.1 กอท 2568 ภาค2, DQ7=200):**
+
+| ชื่อ | เกรด | BG | BH | DH | BJ-BQ | DI | DQ | DR |
+|------|------|----|----|----|----|----|----|-----|
+| ก้องเกียรติ | 1 | 40 | 10 | 44 | 5,6,5,6,5,5,6,6 | 10 | 104 | 52 |
+| สัณห์พิชญ์ | 1 | 56 | 4 | 40 | 5,5,5,5,5,5,5,5 | 4 | 104 | 52 |
+| กรวิชญ์ | 2 | 45 | 15 | 48 | 5,7,6,6,5,7,6,6 | 16 | 124 | 62 |
+| เขตภากร | 2 | 50 | 13 | 48 | 6,5,6,7,5,6,7,6 | 13 | 124 | 62 |
+| กชพร | 2.5 | 61 | 12 | 48 | 6,5,7,5,6,7,6,6 | 13 | 134 | 67 |
+| ธนากร | 3 | 59 | 18 | 48 | 6,5,6,7,6,5,7,6 | 19 | 144 | 72 |
+| ภูตะวัน | 3 | 54 | 17 | 56 | 7,6,7,8,6,7,8,7 | 17 | 144 | 72 |
+| กรฤต | 3 | 53 | 17 | 54 | 7,6,7,7,7,6,8,6 | 18 | 142 | 71 |
+| ณัฐพสิษฐ์ | 3.5 | 57 | 18 | 60 | 8,7,7,8,7,8,8,7 | 19 | 154 | 77 |
+| ธัญพิชชา | 3.5 | 62 | 18 | 56 | 7,8,6,7,8,6,7,7 | 18 | 154 | 77 |
+| พัชรธิดา | 3.5 | 61 | 18 | 56 | 7,6,8,6,7,8,7,7 | 19 | 154 | 77 |
+| ณัฐกานต์ | 3.5 | 40 | 20 | 74 | 9,9,10,9,9,10,9,9 | 20 | 154 | 77 |
 
 ### 🗂️ ภาคเรียนที่ 1 (cols I–BI)
 
@@ -304,13 +358,22 @@ def update_main_sheet(file_path, updates):
 | DR | 122 | สรุปคะแนน (100) | FORMULA: `ROUND(DQ8/DQ$7*DR$7,0)` |
 | DS | 123 | เกรด/ระดับ | FORMULA: VLOOKUP |
 
-### 🔑 Row 7 (header) ที่ต้องไม่แก้
+### 🔑 Row 7 (header) — ต้องตั้ง BJ7:BQ7=10
+
 ```
-I-P = 10 (max ตัวชี้วัด ภาค1)
-BG=80(F), BH=20(V), BI=100(F)
-DI=20(V), DK=0(V), DM=20(V)
-DQ=120(F), DR=100(V)
+I-P = 10 (max ตัวชี้วัด ภาค1) — ห้ามแก้
+BG=80(F), BH=20(V), BI=100(F) — ห้ามแก้
+BJ7:BQ7 = 10 (V) each ← ✅ ต้องตั้งค่านี้ (max ตัวชี้วัด ภาค2)
+  → DH7 = 80 (F: SUM(BJ7:DG7))
+  → DN7 = 100, DP7 = 100
+  → DQ7 = 200 (เปลี่ยนจาก 120)
+DI7=20(V), DK7=0(V), DM7=20(V), DR7=100(V)
 ```
+
+> ⚠️ **CRITICAL — Cached Value Bug**: XML เก็บ cached `<v>` แยกจาก formula
+> ถ้าไม่อัพเดท cache: Excel เห็น DQ7=120 → DR=DQ/120×100 → **เกรด 4 ทุกคน**
+> ต้องอัพเดท cached value ของ DH7=80, DN7=100, DP7=100, DQ7=200
+> **และ** cached value ของทุก formula cell ใน student rows (DH, DJ, DM, DN, DO, DP, DQ, DR)
 
 ### ✅ Template: กรอกคะแนน ภาคเรียนที่ 2
 
@@ -355,11 +418,17 @@ def set_val(row_elem, col_letter, row_num, value):
 def fill_score_sem2(file_path, scores_list):
     """
     กรอกคะแนนภาคเรียนที่ 2 ในชีต คะแนน1
+    *** ต้องอัพเดท cached values ด้วย ไม่งั้น Excel เห็น DQ7=120 → เกรด 4 ทุกคน ***
 
     Args:
         scores_list: list of dict per student, เช่น:
-            [{'indicators': [7,7,6,7,7,6,7,7], 'exam': 15}, ...]
-        (indicators = ตัวชี้วัด BJ-BQ 8 ตัว, exam = ปลายภาค DI)
+            [{'bh': 15, 'indicators': [5,7,6,6,5,7,6,6], 'di': 16}, ...]
+            bh = กลางภาค (INPUT, max=20)
+            indicators = ตัวชี้วัด BJ-BQ 8 ตัว (≥5 ต่อช่อง)
+            di = ปลายภาค (INPUT, max=20)
+
+    Constants (row 7): DJ7=20, DI7=20, DK7=0, DM7=20
+    Formula chain: DH=sum(BJ:BQ), DJ=DI, DM=DI, DN=DH+DI, DO=BG+BH, DQ=DO+DN, DR=round(DQ/200*100)
     """
     extract_dir = 'xlsx_tmp'
     if os.path.exists(extract_dir): shutil.rmtree(extract_dir)
@@ -373,20 +442,59 @@ def fill_score_sem2(file_path, scores_list):
     rows = root.findall('.//x:row', ns)
     row_by_num = {int(r.get('r', 0)): r for r in rows}
 
-    # ตัวชี้วัด ภาค2: BJ=62, BK=63, ..., BQ=69
     indicator_cols = ['BJ','BK','BL','BM','BN','BO','BP','BQ']
 
+    # Step 1: Row 7 — ตั้ง BJ7:BQ7=10 → DQ7=200
+    row7 = row_by_num.get(7)
+    if row7:
+        for col in indicator_cols:
+            set_val(row7, col, 7, 10)
+        # อัพเดท cached values row 7 (formula chain)
+        set_val(row7, 'DH', 7, 80)   # SUM(BJ7:DG7) = 80
+        set_val(row7, 'DN', 7, 100)  # DH7+DM7 = 80+20
+        set_val(row7, 'DP', 7, 100)  # DN7
+        set_val(row7, 'DQ', 7, 200)  # DO7+DP7 = 100+100
+
+    # Step 2: Student rows — ใส่คะแนนและอัพเดท cached formula values
     for idx, excel_row in enumerate(range(8, 8 + len(scores_list))):
         row = row_by_num.get(excel_row)
         if not row or idx >= len(scores_list): continue
         data = scores_list[idx]
+        bh = data['bh']
+        di = data['di']
+        inds = data['indicators']
+        dh = sum(inds)
 
-        # ตัวชี้วัด 1-8
+        # อ่าน BG (formula cached value)
+        bg = 0
+        for c in row.findall(f'{{{NS}}}c'):
+            if c.get('r') == f'BG{excel_row}':
+                v = c.find(f'{{{NS}}}v')
+                if v is not None: bg = int(float(v.text))
+
+        # คำนวณ formula chain
+        dj = di          # ROUND(DI*DJ7/DI7,0) = ROUND(di*20/20,0) = di
+        dm = dj          # DJ+DL = DJ+0
+        dn = dh + dm     # DH+DM
+        do_ = bg + bh    # BI = BG+BH
+        dq = do_ + dn    # DO+DP
+        dr = round(dq / 200 * 100)
+
+        # INPUT values
+        set_val(row, 'BH', excel_row, bh)
         for ci, col in enumerate(indicator_cols):
-            set_val(row, col, excel_row, data['indicators'][ci])
+            set_val(row, col, excel_row, inds[ci])
+        set_val(row, 'DI', excel_row, di)
 
-        # คะแนนปลายภาค
-        set_val(row, 'DI', excel_row, data['exam'])
+        # Cached formula values (CRITICAL)
+        set_val(row, 'DH', excel_row, dh)
+        set_val(row, 'DJ', excel_row, dj)
+        set_val(row, 'DM', excel_row, dm)
+        set_val(row, 'DN', excel_row, dn)
+        set_val(row, 'DO', excel_row, do_)
+        set_val(row, 'DP', excel_row, dn)
+        set_val(row, 'DQ', excel_row, dq)
+        set_val(row, 'DR', excel_row, dr)
 
     tree.write(sheet_path, encoding='utf-8', xml_declaration=True)
     _repack(file_path, extract_dir)
