@@ -373,6 +373,52 @@ def fix_grade3(file_path):
 
 ---
 
+## 📚 Primary `คะแนน1` in `sheet8.xml` (Two-Semester Layout)
+
+Use this when the workbook is primary level and `คะแนน1` stores both Semester 1 and Semester 2 in the same sheet.
+
+### Semester split
+
+- Semester 1 inputs usually live at `I:BI`
+- Semester 2 inputs usually live at `BJ:DV`
+- Typical primary exam inputs:
+  - `BH` = Semester 1 exam
+  - `DI` = Semester 2 exam
+  - `DQ` = year total
+  - `DR` = 100-point score
+  - `DS` = grade result
+  - `DU` = grade override
+
+### Row 7 normalization for common primary templates
+
+If row 7 still contains placeholder values for Semester 2, normalize it before editing student rows:
+
+```text
+BJ7:BQ7 = 10
+DH7 = 80
+DI7 = 20
+DJ7 = 20
+DK7 = 0
+DL7 = 0
+DM7 = 20
+DN7 = 100
+DO7 = 100
+DP7 = 100
+DQ7 = 200
+DR7 = 100
+```
+
+### Distribution heuristics for target grades
+
+1. Prefer real score inputs before `DU` override.
+2. If the user says "distribute across both semesters", keep Semester 1 and Semester 2 totals reasonably close.
+3. For grade targets around `3` or `4`, use indicator values mostly in the `6-9` range.
+4. Do not give every student full exam scores; keep exams consistent with the indicator pattern.
+5. Aim the final `DR/DS` near the lower edge of the requested grade band unless the user asks for a bigger safety margin.
+6. Inspect nearby students first so edited rows match the class scoring style.
+
+---
+
 ## 📚 Sheet "คุณลักษณะ", "อ่านคิด", "สมรรถนะ" — โครงสร้างและวิธีใส่คะแนน
 
 > ไฟล์: `ปพ.5 ม.3 วิทยาการคำนวณ.xlsx`
